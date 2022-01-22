@@ -122,13 +122,18 @@ type getIssuesAndPullRequestsQuery struct {
 				} `graphql:"... on Issue"`
 			}
 		}
-	} `graphql:"search(query: $query, first: 10, type: ISSUE"`
+	} `graphql:"search(query: $query, first: 10, type: ISSUE)"`
 }
+
+const (
+	pullRequest = "PullRequest"
+	issue       = "Issue"
+)
 
 func (c Client) getIssuesAndPullRequests(ctx context.Context, repoName string) (ContributionInfo, error) {
 	query := &getIssuesAndPullRequestsQuery{}
 	variables := map[string]interface{}{
-		"query": githubv4.String(fmt.Sprintf("author: %s repo: %s", c.user, repoName)),
+		"query": githubv4.String(fmt.Sprintf("author:%s repo:%s", c.user, repoName)),
 	}
 	err := c.client.Query(ctx, query, variables)
 	if err != nil {
@@ -140,14 +145,14 @@ func (c Client) getIssuesAndPullRequests(ctx context.Context, repoName string) (
 	}
 	for _, edge := range query.Search.Edges {
 		switch edge.Node.TypeName {
-		case githubv4.RepositoryContributionTypeIssue:
+		case issue:
 			info.Issues = append(info.Issues, RepoItem{
 				ID:    string(edge.Node.Issue.ID),
 				Title: string(edge.Node.Issue.Title),
 				URL:   edge.Node.Issue.URL.URL,
 				State: string(edge.Node.Issue.State),
 			})
-		case githubv4.RepositoryContributionTypePullRequest:
+		case pullRequest:
 			info.PullRequests = append(info.PullRequests, RepoItem{
 				ID:    string(edge.Node.PullRequest.ID),
 				Title: string(edge.Node.PullRequest.Title),
