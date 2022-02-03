@@ -9,7 +9,7 @@ import (
 	"github.com/hown3d/profile-readme-updater/pkg/github"
 )
 
-func Render(out io.Writer, filepath string, event github.Events) error {
+func Render(out io.Writer, filepath string, event *github.Events) error {
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		return fmt.Errorf("reading file on %v: %w", filepath, err)

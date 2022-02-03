@@ -12,10 +12,19 @@ import (
 	"github.com/hown3d/profile-readme-updater/pkg/template"
 )
 
-var templateFile *string = flag.String("template-file", "", "path to the template file")
+var (
+	templateFile   *string = flag.String("template-file", "", "path to the template file")
+	outputFilePath *string = flag.String("out", "", "path to the output")
+)
 
 func main() {
 	flag.Parse()
+
+	outputFile, err := os.Create(*outputFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	githubClient, err := github.NewGithubClient()
 	if err != nil {
 		log.Fatal(err)
@@ -27,12 +36,12 @@ func main() {
 
 	now := time.Now()
 	oneMonthEarlier := now.AddDate(0, -1, 0)
-	collectedEvents, err := client.GetContributions(context.Background(), oneMonthEarlier)
+	err = client.GetContributions(context.Background(), oneMonthEarlier)
 	if err != nil {
-		log.Fatal(fmt.Errorf("get infos: %v", err))
+		log.Fatal(fmt.Errorf("get contributions: %v", err))
 	}
 
-	err = template.Render(os.Stdout, *templateFile, collectedEvents)
+	err = template.Render(outputFile, *templateFile, client.CollectedEvents())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,7 +55,7 @@ func main() {
 	// fmt.Fprintf(w, "Number of pr events: %v\n", len(collectedEvents.PullRequests))
 	// for _, prWithRepo := range collectedEvents.PullRequests {
 	// 	pr := prWithRepo.PullRequest
-	// 	fmt.Fprintf(w, "Title: %v\tRepo: %v\tStatus: %v\tDate: %v\tURL: %v\n", pr.GetTitle(), prWithRepo.Repo.GetName(), pr.GetState(), pr.GetCreatedAt(), pr.GetHTMLURL())
+	// 	fmt.Println(pr.GetMerged())
 	// }
 	// err = w.Flush()
 	// if err != nil {

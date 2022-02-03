@@ -1,12 +1,17 @@
 # hown3d's Profile 
 
 ## Contributed Pull Requests
-{{ range .PullRequests }}
-  - [{{ .PullRequest.Title }}]({{ .PullRequest.HTMLURL }})
-{{ end }} 
+{{- range .PullRequests }}
+  - {{ if eq .PullRequest.GetMerged true -}} 
+  <img height="16" width="16" src="./pkg/template/img/pr_merged.svg"/>
+  {{- else -}}
+  <img height="16" width="16" src="./pkg/template/img/pr_{{ .PullRequest.State }}.svg"/>
+  {{- end -}} 
+  [{{ .PullRequest.Title }}]({{ .PullRequest.HTMLURL }})
 
+{{- end }} 
 
 ## Contributed Issues
-{{ range .Issues }}
-  - [{{ .Issue.Title }}]({{ .Issue.HTMLURL }})
-{{ end }} 
+{{- range .Issues }}
+  - <img height="16" width="16" src="./pkg/template/img/issue_{{ .Issue.State }}.svg"/> [{{ .Issue.Title }}]({{ .Issue.HTMLURL }})
+{{- end }} 
