@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,18 +18,22 @@ type Client struct {
 	user   string
 }
 
-func NewGithubClient() *github.Client {
+func NewGithubClient() (*github.Client, error) {
+	accessToken := os.Getenv("GITHUB_TOKEN")
+	if accessToken == "" {
+		return nil, errors.New("Github Token env variable is empty")
+	}
 	src := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+		&oauth2.Token{AccessToken: accessToken},
 	)
 	httpClient := oauth2.NewClient(context.Background(), src)
-	return github.NewClient(httpClient)
+	return github.NewClient(httpClient), nil
 }
 
 func NewClient(githubClient *github.Client) (Client, error) {
 	username, err := getUsername(context.Background(), githubClient)
 	if err != nil {
-		return Client{}, nil
+		return Client{}, err
 	}
 	return Client{
 		client: githubClient,
@@ -161,7 +166,7 @@ func getUsername(ctx context.Context, client *github.Client) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("getting user: %w", err)
 	}
-	return *user.Login, nil
+	return user.GetLogin(), nil
 }
 
 func splitRepoName(repoName string) (owner, name string) {
