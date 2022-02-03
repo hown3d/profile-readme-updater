@@ -2,234 +2,170 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
-	"net/url"
 	"os"
+	"strings"
+	"time"
 
-	"github.com/shurcooL/githubv4"
+	"github.com/google/go-github/v42/github"
 	"golang.org/x/oauth2"
 )
 
-type githubClient interface {
-	Query(ctx context.Context, q interface{}, variables map[string]interface{}) error
-}
-
 type Client struct {
-	client githubClient
+	client *github.Client
 	user   string
 }
 
-type Info struct {
-	ContributionInfo ContributionInfo
-	Repository       Repo
-}
-
-type ContributionInfo struct {
-	Issues       []RepoItem
-	PullRequests []RepoItem
-}
-
-type RepoItem struct {
-	ID    string
-	Title string
-	URL   *url.URL
-	State string
-}
-
-type Repo struct {
-	ID          string
-	Stars       int
-	Name        string
-	Description string
-	URL         *url.URL
-	ImageURL    *url.URL
-}
-
-func NewGithubGraphQLClient() githubClient {
+func NewGithubClient() *github.Client {
 	src := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
 	)
 	httpClient := oauth2.NewClient(context.Background(), src)
-	return githubv4.NewClient(httpClient)
+	return github.NewClient(httpClient)
 }
 
-func NewClient(user string, client githubClient) Client {
+func NewClient(githubClient *github.Client) (Client, error) {
+	username, err := getUsername(context.Background(), githubClient)
+	if err != nil {
+		return Client{}, nil
+	}
 	return Client{
-		client: client,
-		user:   user,
-	}
+		client: githubClient,
+		user:   username,
+	}, nil
 }
 
-func (c Client) GetInfos(ctx context.Context) ([]Info, error) {
-	infos := []Info{}
-	repos, err := c.getAllContributedRepos(ctx)
-	if err != nil {
-		return []Info{}, err
+type Events struct {
+	PullRequests map[int64]PullRequestWithRepository
+	Issues       map[int64]IssueWithRepository
+}
+
+type PullRequestWithRepository struct {
+	PullRequest *github.PullRequest
+	Repo        *github.Repository
+}
+
+type IssueWithRepository struct {
+	Issue *github.Issue
+	Repo  *github.Repository
+}
+
+func (c Client) GetContributions(ctx context.Context, earliest time.Time) (Events, error) {
+	opts := &github.ListOptions{
+		PerPage: 10,
 	}
-	for _, repo := range repos {
-		contribInfo, err := c.getIssuesAndPullRequests(ctx, repo.Name)
+	collected := Events{
+		PullRequests: map[int64]PullRequestWithRepository{},
+		Issues:       map[int64]IssueWithRepository{},
+	}
+
+pagingLoop:
+	for {
+		events, resp, err := c.client.Activity.ListEventsPerformedByUser(ctx, c.user, false, opts)
 		if err != nil {
-			return []Info{}, err
+			return collected, err
 		}
-		infos = append(infos, Info{
-			ContributionInfo: contribInfo,
-			Repository:       repo,
-		})
-	}
-	return infos, nil
-}
-
-/*
-{
-	search(query: "author:$author repo:$repo", first: 10, type: ISSUE) {
-		edges {
-			node {
-				... on PullRequest {
-					id
-					title
-					url
-					state
+		for _, event := range events {
+			if event.CreatedAt.Before(earliest) {
+				break pagingLoop
+			}
+			switch *event.Type {
+			case "IssuesEvent":
+				e := new(github.IssuesEvent)
+				err := json.Unmarshal(*event.RawPayload, e)
+				if err != nil {
+					return collected, fmt.Errorf("unmarshaling payload: %w", err)
 				}
-				... on Issue {
-					id
-					title
-					url
-					state
 
+				issue := e.GetIssue()
+				_, exists := collected.Issues[issue.GetID()]
+				// key is already populated, so this issue was already present in a previous event
+				if exists {
+					break
 				}
+
+				repo := event.GetRepo()
+				// override state, since it could be newer
+				currentIssueState, err := c.getIssueState(ctx, repo.GetName(), issue.GetNumber())
+				if err != nil {
+					return collected, err
+				}
+				*issue.State = currentIssueState
+
+				issueWithRepo := IssueWithRepository{
+					Issue: issue,
+					Repo:  repo,
+				}
+				collected.Issues[issue.GetID()] = issueWithRepo
+			case "PullRequestEvent":
+				e := new(github.PullRequestEvent)
+				err := json.Unmarshal(*event.RawPayload, e)
+				if err != nil {
+					return collected, fmt.Errorf("unmarshaling payload: %w", err)
+				}
+
+				pr := e.GetPullRequest()
+				_, exists := collected.Issues[pr.GetID()]
+				// key is already populated, so this pr was already in an event
+				if exists {
+					break
+				}
+
+				repo := event.GetRepo()
+				// override state, since it could be newer
+				currentPRState, err := c.getPullRequestState(ctx, repo.GetName(), pr.GetNumber())
+				if err != nil {
+					return collected, err
+				}
+				*pr.State = currentPRState
+
+				prWithRepo := PullRequestWithRepository{
+					PullRequest: pr,
+					Repo:        repo,
+				}
+				collected.PullRequests[pr.GetID()] = prWithRepo
 			}
 		}
-	}
-}
-*/
-type getIssuesAndPullRequestsQuery struct {
-	Search struct {
-		Edges []struct {
-			Node struct {
-				TypeName    githubv4.RepositoryContributionType `graphql:"__typename"`
-				PullRequest struct {
-					ID    githubv4.String
-					Title githubv4.String
-					URL   githubv4.URI
-					State githubv4.String
-				} `graphql:"... on PullRequest"`
-				Issue struct {
-					ID    githubv4.String
-					Title githubv4.String
-					URL   githubv4.URI
-					State githubv4.String
-				} `graphql:"... on Issue"`
-			}
+
+		if resp.NextPage == 0 {
+			break pagingLoop
 		}
-	} `graphql:"search(query: $query, first: 10, type: ISSUE)"`
+
+		opts.Page = resp.NextPage
+	}
+	return collected, nil
 }
 
-const (
-	pullRequest = "PullRequest"
-	issue       = "Issue"
-)
-
-func (c Client) getIssuesAndPullRequests(ctx context.Context, repoName string) (ContributionInfo, error) {
-	query := &getIssuesAndPullRequestsQuery{}
-	variables := map[string]interface{}{
-		"query": githubv4.String(fmt.Sprintf("author:%s repo:%s", c.user, repoName)),
-	}
-	err := c.client.Query(ctx, query, variables)
+func (c Client) getPullRequestState(ctx context.Context, repoName string, number int) (string, error) {
+	owner, name := splitRepoName(repoName)
+	pr, _, err := c.client.PullRequests.Get(ctx, owner, name, number)
 	if err != nil {
-		return ContributionInfo{}, err
+		return "", fmt.Errorf("getting pullrequest %v/%v-#%v: %w", owner, name, number, err)
 	}
-	info := ContributionInfo{
-		Issues:       []RepoItem{},
-		PullRequests: []RepoItem{},
-	}
-	for _, edge := range query.Search.Edges {
-		switch edge.Node.TypeName {
-		case issue:
-			info.Issues = append(info.Issues, RepoItem{
-				ID:    string(edge.Node.Issue.ID),
-				Title: string(edge.Node.Issue.Title),
-				URL:   edge.Node.Issue.URL.URL,
-				State: string(edge.Node.Issue.State),
-			})
-		case pullRequest:
-			info.PullRequests = append(info.PullRequests, RepoItem{
-				ID:    string(edge.Node.PullRequest.ID),
-				Title: string(edge.Node.PullRequest.Title),
-				URL:   edge.Node.PullRequest.URL.URL,
-				State: string(edge.Node.PullRequest.State),
-			})
-		default:
-			log.Printf("Error: Unknown type name: %s", edge.Node.TypeName)
-		}
-	}
-	return info, nil
+	return pr.GetState(), nil
 }
 
-/*{
-    user(login: "${login}") {
-      repositoriesContributedTo(includeUserRepositories: false, first: 10, privacy: PUBLIC) {
-        edges {
-          node {
-            id
-            nameWithOwner
-            shortDescriptionHTML(limit: 120)
-            stargazers {
-              totalCount
-            }
-            url
-            openGraphImageUrl
-          }
-        }
-      }
-    }
-  }
-*/
-type getAllContributedReposQuery struct {
-	User struct {
-		RepositoriesContributedTo struct {
-			Edges []struct {
-				Node struct {
-					ID                   githubv4.String
-					NameWithOwner        githubv4.String
-					ShortDescriptionHTML githubv4.HTML `graphql:"shortDescriptionHTML(limit: 120)"`
-					Stargazers           struct {
-						TotalCount githubv4.Int
-					}
-					URL               githubv4.URI
-					OpenGraphImageURL githubv4.URI
-				}
-			}
-		} `graphql:"repositoriesContributedTo(first: 10, privacy: PUBLIC)"`
-	} `graphql:"user(login: $login)"`
-}
-
-func (c Client) getAllContributedRepos(ctx context.Context) ([]Repo, error) {
-	query := &getAllContributedReposQuery{}
-
-	variables := map[string]interface{}{
-		"login": githubv4.String(c.user),
-	}
-
-	err := c.client.Query(ctx, query, variables)
+func (c Client) getIssueState(ctx context.Context, repoName string, number int) (string, error) {
+	owner, name := splitRepoName(repoName)
+	issue, _, err := c.client.Issues.Get(ctx, owner, name, number)
 	if err != nil {
-		return []Repo{}, err
+		return "", fmt.Errorf("getting issue %v/%v-#%v: %w", owner, name, number, err)
 	}
-
-	repos := []Repo{}
-	for _, edge := range query.User.RepositoriesContributedTo.Edges {
-		repos = append(repos, Repo{
-			ID:          string(edge.Node.ID),
-			Stars:       int(edge.Node.Stargazers.TotalCount),
-			Name:        string(edge.Node.NameWithOwner),
-			Description: string(edge.Node.ShortDescriptionHTML),
-			URL:         edge.Node.URL.URL,
-			ImageURL:    edge.Node.OpenGraphImageURL.URL,
-		})
-	}
-	return repos, nil
+	return issue.GetState(), nil
 }
 
-func (c Client) getLanguage() {
-	panic("not implemented")
+func getUsername(ctx context.Context, client *github.Client) (string, error) {
+	// if user is empty, use the authenticated user
+	user, _, err := client.Users.Get(context.Background(), "")
+	if err != nil {
+		return "", fmt.Errorf("getting user: %w", err)
+	}
+	return *user.Login, nil
+}
+
+func splitRepoName(repoName string) (owner, name string) {
+	owner = strings.Split(repoName, "/")[0]
+	name = strings.Split(repoName, "/")[1]
+	return
 }

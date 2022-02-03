@@ -2,25 +2,42 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
+	"os"
+	"text/tabwriter"
+	"time"
 
 	"github.com/hown3d/profile-readme-updater/pkg/github"
 )
 
-var (
-	user *string = flag.String("user", "", "github username to use")
-)
-
 func main() {
-	flag.Parse()
-	client := github.NewClient(*user, github.NewGithubGraphQLClient())
-	infos, err := client.GetInfos(context.Background())
+	client, err := github.NewClient(github.NewGithubClient())
+	if err != nil {
+		log.Fatal(fmt.Errorf("creating client: %v", err))
+	}
+
+	now := time.Now()
+	oneMonthEarlier := now.AddDate(0, -1, 0)
+	collectedEvents, err := client.GetContributions(context.Background(), oneMonthEarlier)
 	if err != nil {
 		log.Fatal(fmt.Errorf("get infos: %v", err))
 	}
-	for _, info := range infos {
-		fmt.Println(info)
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 8, 0, '\t', 0)
+	fmt.Fprintf(w, "Number of issue events: %v\n", len(collectedEvents.Issues))
+	for _, issueWithRepo := range collectedEvents.Issues {
+		issue := issueWithRepo.Issue
+		fmt.Fprintf(w, "Title: %v\tRepo: %v\tStatus: %v\tDate: %v\tURL: %v\n", issue.GetTitle(), issueWithRepo.Repo.GetName(), issue.GetState(), issue.GetCreatedAt(), issue.GetHTMLURL())
+	}
+
+	fmt.Fprintf(w, "Number of pr events: %v\n", len(collectedEvents.PullRequests))
+	for _, prWithRepo := range collectedEvents.PullRequests {
+		pr := prWithRepo.PullRequest
+		fmt.Fprintf(w, "Title: %v\tRepo: %v\tStatus: %v\tDate: %v\tURL: %v\n", pr.GetTitle(), prWithRepo.Repo.GetName(), pr.GetState(), pr.GetCreatedAt(), pr.GetHTMLURL())
+	}
+	err = w.Flush()
+	if err != nil {
+		log.Fatal(err)
 	}
 }
