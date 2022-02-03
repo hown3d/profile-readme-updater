@@ -45,20 +45,4 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// w := tabwriter.NewWriter(os.Stdout, 0, 8, 0, '\t', 0)
-	// fmt.Fprintf(w, "Number of issue events: %v\n", len(collectedEvents.Issues))
-	// for _, issueWithRepo := range collectedEvents.Issues {
-	// 	issue := issueWithRepo.Issue
-	// 	fmt.Fprintf(w, "Title: %v\tRepo: %v\tStatus: %v\tDate: %v\tURL: %v\n", issue.GetTitle(), issueWithRepo.Repo.GetName(), issue.GetState(), issue.GetCreatedAt(), issue.GetHTMLURL())
-	// }
-
-	// fmt.Fprintf(w, "Number of pr events: %v\n", len(collectedEvents.PullRequests))
-	// for _, prWithRepo := range collectedEvents.PullRequests {
-	// 	pr := prWithRepo.PullRequest
-	// 	fmt.Println(pr.GetMerged())
-	// }
-	// err = w.Flush()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 }

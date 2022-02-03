@@ -1,10 +1,13 @@
 # hown3d's Profile 
 
+
 ## Contributed Pull Requests
 {{- range .PullRequests }}
-  - {{ if eq .PullRequest.GetMerged true -}} 
+{{ $avatarUrl := .Repo.GetOwner.GetAvatarURL }}
+  - <img height="24" width="24" src={{ $avatarUrl }}/> {{ .Repo.GetFullName }}
+  {{ if eq .PullRequest.GetMerged true }} 
   <img height="16" width="16" src="./pkg/template/img/pr_merged.svg"/>
-  {{- else -}}
+  {{- else }}
   <img height="16" width="16" src="./pkg/template/img/pr_{{ .PullRequest.State }}.svg"/>
   {{- end -}} 
   [{{ .PullRequest.Title }}]({{ .PullRequest.HTMLURL }})
@@ -13,5 +16,12 @@
 
 ## Contributed Issues
 {{- range .Issues }}
-  - <img height="16" width="16" src="./pkg/template/img/issue_{{ .Issue.State }}.svg"/> [{{ .Issue.Title }}]({{ .Issue.HTMLURL }})
+{{ $avatarUrl := .Repo.GetOwner.GetAvatarURL }}
+  - <img height="24" width="24" src={{ $avatarUrl }}/> {{ .Repo.GetFullName }}
+  {{- if not .Comment }}
+  <img height="16" width="16" src="./pkg/template/img/issue_{{ .Issue.State }}.svg"/> [{{ .Issue.Title }}]({{ .Issue.HTMLURL }})
+  {{- else }}
+
+  <img height="16" width="16" src="./pkg/template/img/issue_{{ .Issue.State }}.svg"/> [{{ .Issue.Title }}]({{ .Comment.HTMLURL }})
+  {{- end }}  
 {{- end }} 

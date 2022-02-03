@@ -62,8 +62,8 @@ pagingLoop:
 			}
 			var err error
 			switch *event.Type {
-			case "IssuesCommentEvent":
-				err = c.unmarshalIssuesCommentEvent(ctx, event)
+			case "IssueCommentEvent":
+				err = c.unmarshalIssueCommentEvent(ctx, event)
 			case "IssuesEvent":
 				err = c.unmarshalIssuesEvent(ctx, event)
 			case "PullRequestEvent":
