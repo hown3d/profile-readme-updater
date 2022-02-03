@@ -13,9 +13,9 @@ import (
 )
 
 type Client struct {
-	client          *github.Client
-	user            string
-	collectedEvents *Events
+	client *github.Client
+	user   string
+	infos  *Infos
 }
 
 func NewGithubClient() (*github.Client, error) {
@@ -38,9 +38,10 @@ func NewClient(githubClient *github.Client) (*Client, error) {
 	return &Client{
 		client: githubClient,
 		user:   username,
-		collectedEvents: &Events{
+		infos: &Infos{
 			PullRequests: map[int64]PullRequestWithRepository{},
 			Issues:       map[int64]IssueWithRepository{},
+			Languages:    Languages{},
 		},
 	}, nil
 }
@@ -60,31 +61,38 @@ pagingLoop:
 			if event.CreatedAt.Before(earliest) {
 				break pagingLoop
 			}
-			var err error
+			repo := event.GetRepo()
+			err := c.getRepoInfo(ctx, repo)
+			if err != nil {
+				return fmt.Errorf("getting repo info: %w", err)
+			}
 			switch *event.Type {
 			case "IssueCommentEvent":
-				err = c.unmarshalIssueCommentEvent(ctx, event)
+				err = c.collectIssueCommentEvent(ctx, event, repo)
 			case "IssuesEvent":
-				err = c.unmarshalIssuesEvent(ctx, event)
+				err = c.collectIssuesEvent(ctx, event, repo)
 			case "PullRequestEvent":
-				err = c.unmarshalPullRequestEvent(ctx, event)
+				err = c.collectPullRequestEvent(ctx, event, repo)
+			// non of the wanted events, go again
+			default:
+				continue
 			}
 			if err != nil {
 				return fmt.Errorf("unmarshal event: %w", err)
 			}
+			c.infos.Languages.IncreaseCount(repo.GetLanguage())
 		}
 
 		if resp.NextPage == 0 {
 			break pagingLoop
 		}
-
 		opts.Page = resp.NextPage
 	}
 	return nil
 }
 
-func (c *Client) CollectedEvents() *Events {
-	return c.collectedEvents
+func (c *Client) GetInfos() *Infos {
+	return c.infos
 }
 
 func getUsername(ctx context.Context, client *github.Client) (string, error) {

@@ -41,8 +41,10 @@ func main() {
 		log.Fatal(fmt.Errorf("get contributions: %v", err))
 	}
 
-	err = template.Render(outputFile, *templateFile, client.CollectedEvents())
+	infos := client.GetInfos()
+	err = template.Render(outputFile, *templateFile, infos)
 	if err != nil {
 		log.Fatal(err)
 	}
+
 }

@@ -5,16 +5,22 @@ import (
 	"html/template"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/hown3d/profile-readme-updater/pkg/github"
 )
 
-func Render(out io.Writer, filepath string, event *github.Events) error {
+func Render(out io.Writer, filepath string, event *github.Infos) error {
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		return fmt.Errorf("reading file on %v: %w", filepath, err)
 	}
-	t := template.Must(template.New("readme").Parse(string(data)))
+
+	funcMap := template.FuncMap{
+		"ToLower": strings.ToLower,
+	}
+
+	t := template.Must(template.New("readme").Funcs(funcMap).Parse(string(data)))
 
 	err = t.Execute(out, event)
 	if err != nil {
