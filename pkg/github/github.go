@@ -104,8 +104,12 @@ func getUsername(ctx context.Context, client *github.Client) (string, error) {
 	return user.GetLogin(), nil
 }
 
-func splitRepoName(repoName string) (owner, name string) {
-	owner = strings.Split(repoName, "/")[0]
-	name = strings.Split(repoName, "/")[1]
+func splitRepoName(repoName string) (owner, name string, err error) {
+	split := strings.Split(repoName, "/")
+	if len(split) != 2 {
+		return "", "", fmt.Errorf("%v is not a valid repo name", repoName)
+	}
+	owner = split[0]
+	name = split[1]
 	return
 }
