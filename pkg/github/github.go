@@ -12,12 +12,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type Client struct {
-	client *github.Client
-	user   string
-	infos  *Infos
-}
-
 func NewGithubClient() (*github.Client, error) {
 	accessToken := os.Getenv("GITHUB_TOKEN")
 	if accessToken == "" {
@@ -38,7 +32,7 @@ func NewClient(githubClient *github.Client) (*Client, error) {
 	return &Client{
 		client: githubClient,
 		user:   username,
-		infos: &Infos{
+		Infos: &Infos{
 			PullRequests: map[int64]PullRequestWithRepository{},
 			Issues:       map[int64]IssueWithRepository{},
 			Languages:    Languages{},
@@ -80,7 +74,7 @@ pagingLoop:
 			if err != nil {
 				return fmt.Errorf("unmarshal event: %w", err)
 			}
-			c.infos.Languages.IncreaseCount(repo.GetLanguage())
+			c.Infos.Languages.IncreaseCount(repo.GetLanguage())
 		}
 
 		if resp.NextPage == 0 {
@@ -89,10 +83,6 @@ pagingLoop:
 		opts.Page = resp.NextPage
 	}
 	return nil
-}
-
-func (c *Client) GetInfos() *Infos {
-	return c.infos
 }
 
 func getUsername(ctx context.Context, client *github.Client) (string, error) {

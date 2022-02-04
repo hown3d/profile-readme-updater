@@ -7,9 +7,15 @@ import (
 	"github.com/google/go-github/v42/github"
 )
 
+type Client struct {
+	client *github.Client
+	user   string
+	Infos  *Infos
+}
+
 type Infos struct {
-	PullRequests map[int64]PullRequestWithRepository
-	Issues       map[int64]IssueWithRepository
+	PullRequests store[PullRequestWithRepository]
+	Issues       store[IssueWithRepository]
 	Languages    Languages
 }
 
